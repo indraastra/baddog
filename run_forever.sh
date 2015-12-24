@@ -1,1 +1,1 @@
-while true; do ./snap_and_upload; sleep 120; done
+while true; do ./snap_and_upload.sh; sleep 120; done
