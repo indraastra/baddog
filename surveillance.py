@@ -1,17 +1,34 @@
+import logging
 from multiprocessing import Process, Queue
+import signal
 import time
 
+import config
+
 def detector(inbox, outbox):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    import RPi.GPIO as GPIO
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(config.DETECTOR_IN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+    # Set up interrupt.
+    def motion_detected(channel):
+        print("Motion detected!")
+        outbox.put("MOTION")
+    
     while True:
         msg = inbox.get()
         if (msg == 'KILL'):
+            GPIO.cleanup()
             outbox.put(msg)
             break
-        elif (msg == 'GOGOGO'):
-            print("GOGOGO!")
-            outbox.put('MOTION')
+        elif (msg == 'START'):
+            GPIO.add_event_detect(config.DETECTOR_IN_PIN, GPIO.RISING,
+                    callback=motion_detected, bouncetime=100)
+
 
 def photographer(inbox, outbox):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     while True:
         msg = inbox.get()
         if (msg == 'KILL'):
@@ -22,7 +39,9 @@ def photographer(inbox, outbox):
             time.sleep(2)
             outbox.put('PHOTO')
 
+
 def uploader(inbox, outbox):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     while True:
         msg = inbox.get()
         if (msg == 'KILL'):
@@ -33,7 +52,9 @@ def uploader(inbox, outbox):
             time.sleep(3)
             outbox.put('UPLOADED')
 
+
 def collector(inbox):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     while True:
         msg = inbox.get()
         if (msg == 'KILL'):
@@ -41,7 +62,11 @@ def collector(inbox):
         elif (msg == 'UPLOADED'):
             print('Successfully uploaded')
 
+
 if __name__=='__main__':
+    logging.basicConfig(format='%(asctime)s | %(message)s', datefmt='%Y-%m-%d %I:%M:%S %p', level=logging.DEBUG)
+    logging.info("Initializing system!")
+
     detector_mailbox = Queue()
     photographer_mailbox = Queue()
     uploader_mailbox = Queue()
@@ -54,15 +79,24 @@ if __name__=='__main__':
     collector_process = Process(target=collector, args=(collector_mailbox,))
     processes = [ detector_process, photographer_process, uploader_process, collector_process ]
 
-    for process in processes:
-        process.start()
+    try:
+        logging.info("Starting system!")
 
-    for i in range(3):
-        detector_mailbox.put('GOGOGO')
+        for process in processes:
+            process.start()
 
-    detector_mailbox.put('KILL')
+        detector_mailbox.put('START')
 
-    for process in processes:
-        process.join()
+        while True: pass
 
-    print('Finished!')
+    except KeyboardInterrupt:
+        logging.info("Stopping system!")
+
+    finally:
+
+        detector_mailbox.put('KILL')
+
+        for process in processes:
+            process.join()
+
+        logging.info('Finished!')
