@@ -1,5 +1,6 @@
 import logging
 from multiprocessing import Process, Queue
+import os
 import signal
 import time
 
@@ -13,8 +14,8 @@ def detector(inbox, outbox):
 
     # Set up interrupt.
     def motion_detected(channel):
-        print("Motion detected!")
-        outbox.put("MOTION")
+        print('Motion detected!')
+        outbox.put('MOTION')
     
     while True:
         msg = inbox.get()
@@ -28,16 +29,37 @@ def detector(inbox, outbox):
 
 
 def photographer(inbox, outbox):
+    from datetime import datetime
+    import subprocess
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    def snap():
+        filename = os.path.join(config.PHOTO_DIR,
+                datetime.now().strftime('%Y-%m-%d_%H%M%S_%f') + '.jpg')
+        print('Taking photo!')
+        subprocess.check_output([
+            'raspistill',
+            '-n',  # No preview window.
+            '-vf', # Vertical flip.
+            '-hf', # Horizontal flip.
+            '-t', '1', # 1ms timeout.
+            '-o', filename  # Output file.
+            ], stderr=subprocess.STDOUT)
+        return filename
+
     while True:
         msg = inbox.get()
         if (msg == 'KILL'):
             outbox.put(msg)
             break
         elif (msg == 'MOTION'):
-            print("Taking photo!")
-            time.sleep(2)
-            outbox.put('PHOTO')
+            print('Starting capture session')
+            for i in range(config.BURST_PHOTOS):
+                photo = snap()
+                print(photo)
+                outbox.put('PHOTO')
+                time.sleep(config.BURST_DELAY_S)
+            print('Ending capture session')
 
 
 def uploader(inbox, outbox):
@@ -48,7 +70,7 @@ def uploader(inbox, outbox):
             outbox.put(msg)
             break
         elif (msg == 'PHOTO'):
-            print("Uploading photo!")
+            print('Uploading photo!')
             time.sleep(3)
             outbox.put('UPLOADED')
 
@@ -65,7 +87,7 @@ def collector(inbox):
 
 if __name__=='__main__':
     logging.basicConfig(format='%(asctime)s | %(message)s', datefmt='%Y-%m-%d %I:%M:%S %p', level=logging.DEBUG)
-    logging.info("Initializing system!")
+    logging.info('Initializing system!')
 
     detector_mailbox = Queue()
     photographer_mailbox = Queue()
@@ -80,7 +102,7 @@ if __name__=='__main__':
     processes = [ detector_process, photographer_process, uploader_process, collector_process ]
 
     try:
-        logging.info("Starting system!")
+        logging.info('Starting system!')
 
         for process in processes:
             process.start()
@@ -90,7 +112,7 @@ if __name__=='__main__':
         while True: pass
 
     except KeyboardInterrupt:
-        logging.info("Stopping system!")
+        logging.info('Stopping system!')
 
     finally:
 
