@@ -47,19 +47,30 @@ def photographer(inbox, outbox):
             ], stderr=subprocess.STDOUT)
         return filename
 
+    capture = False
+    idx = 0
+
     while True:
-        msg = inbox.get()
-        if (msg == 'KILL'):
-            outbox.put(msg)
-            break
-        elif (msg == 'MOTION'):
-            print('Starting capture session')
-            for i in range(config.BURST_PHOTOS):
+        if not inbox.empty():
+            msg = inbox.get()
+            if (msg == 'KILL'):
+                outbox.put(msg)
+                break
+            elif (msg == 'MOTION'):
+                if capture:
+                    continue
+                print('Starting capture session')
+                capture = True
+                idx = 0
+
+        if capture:
+            if idx < config.BURST_PHOTOS:
                 photo = snap()
                 print(photo)
                 outbox.put('PHOTO')
                 time.sleep(config.BURST_DELAY_S)
-            print('Ending capture session')
+            else:
+                print('Ending capture session')
 
 
 def uploader(inbox, outbox):
