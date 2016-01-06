@@ -14,7 +14,7 @@ def detector(inbox, outbox):
 
     # Set up interrupt.
     def motion_detected(channel):
-        print('Motion detected!')
+        logging.info('Motion detected!')
         outbox.put('MOTION')
     
     while True:
@@ -29,22 +29,27 @@ def detector(inbox, outbox):
 
 
 def photographer(inbox, outbox):
-    from datetime import datetime
     import subprocess
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-    def snap():
+    # This hack is needed to prevent Ctrl+C from reaching the subprocess.
+    def preexec_function():
+        os.setpgrp()
+
+    def snap(idx = None):
         filename = os.path.join(config.PHOTO_DIR,
-                datetime.now().strftime('%Y-%m-%d_%H%M%S_%f') + '.jpg')
-        print('Taking photo!')
+                time.strftime('%Y-%m-%d_%H%M%S', time.localtime()) + \
+                        '[' + str(idx) + '].jpg')
+        logging.info('Taking photo: {0}!'.format(filename))
         subprocess.check_output([
             'raspistill',
             '-n',  # No preview window.
             '-vf', # Vertical flip.
             '-hf', # Horizontal flip.
-            '-t', '1', # 1ms timeout.
             '-o', filename  # Output file.
-            ], stderr=subprocess.STDOUT)
+            ],
+            stderr=subprocess.STDOUT,
+            preexec_fn=preexec_function)
         return filename
 
     capture = False
@@ -59,41 +64,37 @@ def photographer(inbox, outbox):
             elif (msg == 'MOTION'):
                 if capture:
                     continue
-                print('Starting capture session')
+                logging.info('Starting capture session')
                 capture = True
                 idx = 0
 
         if capture:
             if idx < config.BURST_PHOTOS:
-                photo = snap()
-                print(photo)
-                outbox.put('PHOTO')
+                photo = snap(idx)
+                outbox.put(photo)
+                idx += 1
                 time.sleep(config.BURST_DELAY_S)
             else:
-                print('Ending capture session')
+                logging.info('Ending capture session')
+                capture = False
 
 
-def uploader(inbox, outbox):
+def uploader(inbox):
+    from util.upload import upload_photo
+
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    while True:
-        msg = inbox.get()
-        if (msg == 'KILL'):
-            outbox.put(msg)
-            break
-        elif (msg == 'PHOTO'):
-            print('Uploading photo!')
-            time.sleep(3)
-            outbox.put('UPLOADED')
 
-
-def collector(inbox):
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    uploaded = 0
     while True:
         msg = inbox.get()
         if (msg == 'KILL'):
             break
-        elif (msg == 'UPLOADED'):
-            print('Successfully uploaded')
+        elif (os.path.exists(msg)):
+            file_id = upload_photo(msg)
+            if file_id:
+                uploaded += 1
+                logging.info("Uploaded {0} photos!".format(uploaded))
+
 
 
 if __name__=='__main__':
@@ -103,14 +104,12 @@ if __name__=='__main__':
     detector_mailbox = Queue()
     photographer_mailbox = Queue()
     uploader_mailbox = Queue()
-    collector_mailbox = Queue()
-    mailboxes = [ detector_mailbox, photographer_mailbox, uploader_mailbox, collector_mailbox ]
+    mailboxes = [ detector_mailbox, photographer_mailbox, uploader_mailbox ]
 
     detector_process = Process(target=detector, args=(detector_mailbox, photographer_mailbox))
     photographer_process = Process(target=photographer, args=(photographer_mailbox, uploader_mailbox))
-    uploader_process = Process(target=uploader, args=(uploader_mailbox, collector_mailbox))
-    collector_process = Process(target=collector, args=(collector_mailbox,))
-    processes = [ detector_process, photographer_process, uploader_process, collector_process ]
+    uploader_process = Process(target=uploader, args=(uploader_mailbox, ))
+    processes = [ detector_process, photographer_process, uploader_process ]
 
     try:
         logging.info('Starting system!')

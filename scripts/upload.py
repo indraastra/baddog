@@ -16,7 +16,6 @@ from oauth2client import tools
 import config
 
 FILE_NAME = sys.argv[1]
-FOLDER_QUERY = "mimeType = 'application/vnd.google-apps.folder' and title = '%s'" % config.FOLDER_NAME
 
 parser = argparse.ArgumentParser(parents=[tools.argparser])
 flags = parser.parse_args(sys.argv[2:])
@@ -48,7 +47,7 @@ http = credentials.authorize(http = httplib2.Http())
 drive_service = apiclient.discovery.build('drive', 'v2', http=http)
 
 # Create the directory structure if necessary.
-folder_search = drive_service.files().list(q=FOLDER_QUERY, maxResults=1).execute()
+folder_search = drive_service.files().list(q=config.FOLDER_QUERY, maxResults=1).execute()
 folder_search = folder_search["items"]
 
 if len(folder_search) == 0:
