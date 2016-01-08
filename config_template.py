@@ -22,5 +22,5 @@ LED_OUT_PIN = 6
 
 ###########
 PHOTO_DIR = os.path.abspath('photos')
-BURST_PHOTOS = 4
+BURST_PHOTOS = 6
 BURST_DELAY_S = 5
