@@ -48,27 +48,36 @@ def get_credentials(log_in=False):
     return credentials
 
 
-def upload_photo(path):
+def drive_getdir(folder_name):
+    folder_query = config.BASE_QUERY % folder_name
+    folder_search = drive_service.files().list(q=folder_query, maxResults=1).execute()
+    folder_search = folder_search['items']
+    if len(folder_search) > 0:
+        return folder_search[0]['id']
+
+
+def drive_mkdir(folder_name, parent=None):
+    folder_id = drive_getdir(folder_name)
+    if folder_id:
+        # Found the folder.
+        logging.debug('Folder found: {0}'.format(folder_id))
+    else:
+        # Didn't find the folder, so we need to create it.
+        new_folder = drive_service.files().insert(
+            body={
+                'title': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [{'id': parent}] if parent else None
+            }
+        ).execute()
+        folder_id = new_folder['id']
+        logging.debug('Folder created: {0}'.format(folder_id))
+    return folder_id
+
+
+def upload_photo(path, folder_id):
     photo = os.path.join(os.path.abspath(config.PHOTO_DIR), os.path.basename(path))
     if not os.path.exists(photo): return None
-
-    credentials = get_credentials(log_in=False)
-    if not credentials: return None
-
-    http = credentials.authorize(http = httplib2.Http())
-    drive_service = apiclient.discovery.build('drive', 'v2', http=http)
-
-    # Create the directory structure if necessary.
-    folder_search = drive_service.files().list(q=config.FOLDER_QUERY, maxResults=1).execute()
-    folder_search = folder_search['items']
-
-    if len(folder_search) == 0:
-        new_folder = drive_service.files().insert(body={'title': config.FOLDER_NAME}).execute()
-        folder_id = new_folder['id']
-        logging.debug('Folder created: ', folder_id)
-    else:
-        folder_id = folder_search[0]['id']
-        logging.debug('Folder found: {0}'.format(folder_id))
 
     # Insert a file. Files are comprised of contents and metadata.
     # MediaFileUpload abstracts uploading file contents from a file on disk.
@@ -87,6 +96,11 @@ def upload_photo(path):
     logging.debug('Uploaded file {0}!'.format(new_file['id']))
 
     return new_file['id']
+
+
+credentials = get_credentials(log_in=False)
+http = credentials.authorize(http = httplib2.Http())
+drive_service = apiclient.discovery.build('drive', 'v2', http=http)
 
 
 if __name__ == '__main__':

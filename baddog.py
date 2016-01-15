@@ -10,8 +10,8 @@ import time
 import RPi.GPIO as GPIO
 
 import config
-from util.upload import upload_photo
-
+from util import upload
+ 
 class PipeProcess(Process):
     """Base class for all doge processes."""
     def __init__(self, inbox, outbox=None):
@@ -121,13 +121,16 @@ class Photographer(PipeProcess):
 class Uploader(PipeProcess):
     def setup(self):
         self.uploaded = 0
+        self.root_dir = upload.drive_mkdir(config.FOLDER_NAME)
+        session = time.strftime('Session %Y-%m-%d %H:%M:%S', time.localtime())
+        self.session_dir = upload.drive_mkdir(session, self.root_dir)
 
     def teardown(self):
         logging.info("Successfully uploaded {0} photos!".format(self.uploaded))
 
     def doge(self, msg=None):
         if (msg and os.path.exists(msg)):
-            file_id = upload_photo(msg)
+            file_id = upload.upload_photo(msg, self.session_dir)
             if file_id:
                 self.uploaded += 1
                 logging.info("Uploaded {0} photos!".format(self.uploaded))
